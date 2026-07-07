@@ -150,7 +150,6 @@ const TOOLS: ToolFn[] = [
   },
 ];
 
-type SupabaseCtx = Awaited<ReturnType<typeof requireSupabaseAuth.server>> extends { context: infer C } ? C : never;
 
 // Utility: run a tool
 async function runTool(
