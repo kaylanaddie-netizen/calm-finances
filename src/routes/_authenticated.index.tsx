@@ -179,7 +179,7 @@ function ChatPage() {
           />
           <button
             onClick={() => void submit()}
-            disabled={!input.trim() || send.isPending}
+            disabled={!displayValue.trim() || send.isPending}
             className="shrink-0 grid h-11 w-11 place-items-center rounded-2xl bg-primary text-primary-foreground disabled:opacity-40"
             aria-label="Send"
           >
