@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { loadMessages, sendChatMessage } from "@/lib/ai-chat.functions";
+import { useVoiceDictation } from "@/lib/useVoiceDictation";
 import { Mic, MicOff, Send } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
@@ -56,41 +57,53 @@ function ChatPage() {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // Voice input (Web Speech API)
-  const [listening, setListening] = useState(false);
-  const recogRef = useRef<any>(null);
+  // Voice dictation with live streaming transcript
+  // `committed` = what's locked into `input`; interim tail is appended for display only
+  const committedRef = useRef<string>("");
+  const [interim, setInterim] = useState("");
 
-  function toggleMic() {
-    const w = window as any;
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) { toast.error("Voice isn't supported in this browser"); return; }
-    if (listening) { recogRef.current?.stop(); return; }
-    const r = new SR();
-    r.continuous = false; r.interimResults = true; r.lang = "en-US";
-    let final = "";
-    r.onresult = (e: any) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) final += t;
-        else interim += t;
-      }
-      setInput(final + interim);
-    };
-    r.onend = () => setListening(false);
-    r.onerror = () => setListening(false);
-    r.start();
-    recogRef.current = r;
-    setListening(true);
+  const handleFinal = useCallback((text: string) => {
+    const base = committedRef.current;
+    const next = (base ? base + " " : "") + text.trim();
+    committedRef.current = next;
+    setInput(next);
+    setInterim("");
+  }, []);
+
+  const handleInterim = useCallback((text: string) => {
+    setInterim(text);
+  }, []);
+
+  const { listening, transcribing, start, stop } = useVoiceDictation({
+    onFinal: handleFinal,
+    onInterim: handleInterim,
+    onError: (m) => toast.error(m),
+  });
+
+  async function toggleMic() {
+    if (listening) {
+      await stop();
+    } else {
+      committedRef.current = input.trim();
+      setInterim("");
+      await start();
+    }
   }
 
-  function submit() {
-    const t = input.trim();
+  async function submit() {
+    if (listening) await stop();
+    const t = (committedRef.current || input).trim();
     if (!t || send.isPending) return;
     setInput("");
+    committedRef.current = "";
+    setInterim("");
     send.mutate(t);
     inputRef.current?.focus();
   }
+
+  const displayValue = listening
+    ? [committedRef.current, interim].filter(Boolean).join(committedRef.current && interim ? " " : "")
+    : input;
 
   const showEmpty = messages.length === 0 && !send.isPending;
 
@@ -143,24 +156,30 @@ function ChatPage() {
             className={`shrink-0 grid h-11 w-11 place-items-center rounded-2xl transition-colors ${
               listening ? "bg-clay text-clay-foreground animate-pulse" : "hover:bg-muted text-muted-foreground"
             }`}
-            aria-label="Voice input"
+            aria-label={listening ? "Stop voice input" : "Start voice input"}
           >
             {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
           </button>
           <textarea
             ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={displayValue}
+            onChange={(e) => {
+              if (listening) return; // ignore edits while dictating
+              setInput(e.target.value);
+              committedRef.current = e.target.value;
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void submit(); }
             }}
             rows={1}
-            placeholder="Say anything…"
-            className="flex-1 resize-none bg-transparent outline-none py-3 px-1 text-base placeholder:text-muted-foreground max-h-32"
+            placeholder={listening ? (transcribing ? "Listening…" : "Speak naturally…") : "Say anything…"}
+            className={`flex-1 resize-none bg-transparent outline-none py-3 px-1 text-base placeholder:text-muted-foreground max-h-32 leading-relaxed transition-colors ${
+              listening && interim && !committedRef.current ? "text-foreground/70" : ""
+            }`}
           />
           <button
-            onClick={submit}
-            disabled={!input.trim() || send.isPending}
+            onClick={() => void submit()}
+            disabled={!displayValue.trim() || send.isPending}
             className="shrink-0 grid h-11 w-11 place-items-center rounded-2xl bg-primary text-primary-foreground disabled:opacity-40"
             aria-label="Send"
           >
