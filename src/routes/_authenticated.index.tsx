@@ -90,13 +90,20 @@ function ChatPage() {
     }
   }
 
-  function submit() {
-    const t = input.trim();
+  async function submit() {
+    if (listening) await stop();
+    const t = (committedRef.current || input).trim();
     if (!t || send.isPending) return;
     setInput("");
+    committedRef.current = "";
+    setInterim("");
     send.mutate(t);
     inputRef.current?.focus();
   }
+
+  const displayValue = listening
+    ? [committedRef.current, interim].filter(Boolean).join(committedRef.current && interim ? " " : "")
+    : input;
 
   const showEmpty = messages.length === 0 && !send.isPending;
 
