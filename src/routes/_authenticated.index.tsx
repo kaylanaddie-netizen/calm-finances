@@ -57,32 +57,37 @@ function ChatPage() {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // Voice input (Web Speech API)
-  const [listening, setListening] = useState(false);
-  const recogRef = useRef<any>(null);
+  // Voice dictation with live streaming transcript
+  // `committed` = what's locked into `input`; interim tail is appended for display only
+  const committedRef = useRef<string>("");
+  const [interim, setInterim] = useState("");
 
-  function toggleMic() {
-    const w = window as any;
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) { toast.error("Voice isn't supported in this browser"); return; }
-    if (listening) { recogRef.current?.stop(); return; }
-    const r = new SR();
-    r.continuous = false; r.interimResults = true; r.lang = "en-US";
-    let final = "";
-    r.onresult = (e: any) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) final += t;
-        else interim += t;
-      }
-      setInput(final + interim);
-    };
-    r.onend = () => setListening(false);
-    r.onerror = () => setListening(false);
-    r.start();
-    recogRef.current = r;
-    setListening(true);
+  const handleFinal = useCallback((text: string) => {
+    const base = committedRef.current;
+    const next = (base ? base + " " : "") + text.trim();
+    committedRef.current = next;
+    setInput(next);
+    setInterim("");
+  }, []);
+
+  const handleInterim = useCallback((text: string) => {
+    setInterim(text);
+  }, []);
+
+  const { listening, transcribing, start, stop } = useVoiceDictation({
+    onFinal: handleFinal,
+    onInterim: handleInterim,
+    onError: (m) => toast.error(m),
+  });
+
+  async function toggleMic() {
+    if (listening) {
+      await stop();
+    } else {
+      committedRef.current = input.trim();
+      setInterim("");
+      await start();
+    }
   }
 
   function submit() {
