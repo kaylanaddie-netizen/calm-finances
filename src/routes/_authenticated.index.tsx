@@ -156,23 +156,29 @@ function ChatPage() {
             className={`shrink-0 grid h-11 w-11 place-items-center rounded-2xl transition-colors ${
               listening ? "bg-clay text-clay-foreground animate-pulse" : "hover:bg-muted text-muted-foreground"
             }`}
-            aria-label="Voice input"
+            aria-label={listening ? "Stop voice input" : "Start voice input"}
           >
             {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
           </button>
           <textarea
             ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={displayValue}
+            onChange={(e) => {
+              if (listening) return; // ignore edits while dictating
+              setInput(e.target.value);
+              committedRef.current = e.target.value;
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void submit(); }
             }}
             rows={1}
-            placeholder="Say anything…"
-            className="flex-1 resize-none bg-transparent outline-none py-3 px-1 text-base placeholder:text-muted-foreground max-h-32"
+            placeholder={listening ? (transcribing ? "Listening…" : "Speak naturally…") : "Say anything…"}
+            className={`flex-1 resize-none bg-transparent outline-none py-3 px-1 text-base placeholder:text-muted-foreground max-h-32 leading-relaxed transition-colors ${
+              listening && interim && !committedRef.current ? "text-foreground/70" : ""
+            }`}
           />
           <button
-            onClick={submit}
+            onClick={() => void submit()}
             disabled={!input.trim() || send.isPending}
             className="shrink-0 grid h-11 w-11 place-items-center rounded-2xl bg-primary text-primary-foreground disabled:opacity-40"
             aria-label="Send"
