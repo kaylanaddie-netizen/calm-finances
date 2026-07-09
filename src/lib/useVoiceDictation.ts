@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// Rolling WAV dictation via Lovable AI streaming transcription.
-// While the user speaks, we continuously encode the accumulated PCM to a
-// complete WAV file, POST it to /api/transcribe, and read SSE deltas so
-// the transcript grows in the input as the words are recognized.
+// Reliable rolling WAV dictation via Lovable AI streaming transcription.
+// Requests mic permission on start, streams a rolling PCM buffer to
+// /api/transcribe, and auto-stops after a period of silence.
 
 type Options = {
-  onFinal: (text: string) => void; // called with committed transcript for a segment
-  onInterim: (text: string) => void; // running transcript for the current window
+  onFinal: (text: string) => void;
+  onInterim: (text: string) => void;
   onError?: (message: string) => void;
+  onAutoStop?: () => void; // fired when we auto-stop after silence
 };
 
 const TARGET_SAMPLE_RATE = 16000;
-const WINDOW_MS = 2200; // re-transcribe every ~2.2s while speaking
-const SILENCE_MS = 900; // commit a segment after this much silence
+const WINDOW_MS = 2000;
+const SILENCE_MS = 1200;      // commit segment after this quiet
+const AUTOSTOP_MS = 2500;     // fully stop + auto-submit after this quiet
 const SILENCE_RMS = 0.012;
 
 function floatTo16BitPCM(samples: Float32Array): Int16Array {
@@ -24,53 +25,43 @@ function floatTo16BitPCM(samples: Float32Array): Int16Array {
   }
   return out;
 }
-
 function downsample(input: Float32Array, from: number, to: number): Float32Array {
   if (to >= from) return input;
   const ratio = from / to;
   const outLen = Math.floor(input.length / ratio);
   const out = new Float32Array(outLen);
-  let o = 0;
-  let i = 0;
+  let o = 0, i = 0;
   while (o < outLen) {
     const next = Math.floor((o + 1) * ratio);
-    let sum = 0;
-    let count = 0;
-    for (; i < next && i < input.length; i++) {
-      sum += input[i];
-      count++;
-    }
+    let sum = 0, count = 0;
+    for (; i < next && i < input.length; i++) { sum += input[i]; count++; }
     out[o++] = count > 0 ? sum / count : 0;
   }
   return out;
 }
-
 function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   const pcm = floatTo16BitPCM(samples);
   const buffer = new ArrayBuffer(44 + pcm.length * 2);
   const view = new DataView(buffer);
-  const writeStr = (o: number, s: string) => {
-    for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
-  };
-  writeStr(0, "RIFF");
-  view.setUint32(4, 36 + pcm.length * 2, true);
-  writeStr(8, "WAVE");
-  writeStr(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeStr(36, "data");
-  view.setUint32(40, pcm.length * 2, true);
+  const writeStr = (o: number, s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+  writeStr(0, "RIFF"); view.setUint32(4, 36 + pcm.length * 2, true);
+  writeStr(8, "WAVE"); writeStr(12, "fmt "); view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  writeStr(36, "data"); view.setUint32(40, pcm.length * 2, true);
   let o = 44;
   for (let i = 0; i < pcm.length; i++, o += 2) view.setInt16(o, pcm[i], true);
   return new Blob([buffer], { type: "audio/wav" });
 }
+function concat(chunks: Float32Array[]) {
+  let len = 0; for (const c of chunks) len += c.length;
+  const out = new Float32Array(len);
+  let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
 
-export function useVoiceDictation({ onFinal, onInterim, onError }: Options) {
+export function useVoiceDictation({ onFinal, onInterim, onError, onAutoStop }: Options) {
   const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
 
@@ -78,13 +69,14 @@ export function useVoiceDictation({ onFinal, onInterim, onError }: Options) {
   const streamRef = useRef<MediaStream | null>(null);
   const nodeRef = useRef<ScriptProcessorNode | null>(null);
   const srcRef = useRef<MediaStreamAudioSourceNode | null>(null);
-
-  const segmentPcmRef = useRef<Float32Array[]>([]); // audio since last commit
+  const segmentPcmRef = useRef<Float32Array[]>([]);
   const sampleRateRef = useRef(48000);
   const abortRef = useRef<AbortController | null>(null);
   const lastVoiceAtRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inflightRef = useRef(false);
+  const listeningRef = useRef(false);
+  const stopReqRef = useRef(false);
 
   const cleanup = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -100,18 +92,10 @@ export function useVoiceDictation({ onFinal, onInterim, onError }: Options) {
     ctxRef.current = null;
     segmentPcmRef.current = [];
     inflightRef.current = false;
+    listeningRef.current = false;
   }, []);
 
   useEffect(() => () => cleanup(), [cleanup]);
-
-  const concat = (chunks: Float32Array[]) => {
-    let len = 0;
-    for (const c of chunks) len += c.length;
-    const out = new Float32Array(len);
-    let o = 0;
-    for (const c of chunks) { out.set(c, o); o += c.length; }
-    return out;
-  };
 
   const transcribeCurrent = useCallback(
     async (commit: boolean) => {
@@ -119,15 +103,13 @@ export function useVoiceDictation({ onFinal, onInterim, onError }: Options) {
       const chunks = segmentPcmRef.current;
       if (chunks.length === 0) return;
       const merged = concat(chunks);
-      if (merged.length < sampleRateRef.current * 0.4) return; // <0.4s of audio
-
+      if (merged.length < sampleRateRef.current * 0.4) return;
       const down = downsample(merged, sampleRateRef.current, TARGET_SAMPLE_RATE);
       const wav = encodeWav(down, TARGET_SAMPLE_RATE);
       if (wav.size < 2048) return;
 
       const form = new FormData();
       form.append("file", wav, "recording.wav");
-
       const ac = new AbortController();
       abortRef.current = ac;
       inflightRef.current = true;
@@ -142,9 +124,7 @@ export function useVoiceDictation({ onFinal, onInterim, onError }: Options) {
         }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = "";
-        let running = "";
-        let finalText = "";
+        let buffer = "", running = "", finalText = "";
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -188,14 +168,34 @@ export function useVoiceDictation({ onFinal, onInterim, onError }: Options) {
   );
 
   const start = useCallback(async () => {
-    if (listening) return;
+    if (listeningRef.current) return;
+    stopReqRef.current = false;
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      onError?.("Voice input isn't supported in this browser.");
+      return;
+    }
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
+    } catch (e) {
+      const err = e as DOMException;
+      if (err?.name === "NotAllowedError" || err?.name === "SecurityError") {
+        onError?.("Microphone access was blocked. Allow it in your browser settings and try again.");
+      } else if (err?.name === "NotFoundError") {
+        onError?.("No microphone found.");
+      } else {
+        onError?.(err?.message || "Couldn't access the microphone.");
+      }
+      return;
+    }
+    try {
       streamRef.current = stream;
       const AC: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
       const ctx = new AC();
+      // resume in case it starts suspended (iOS Safari)
+      if (ctx.state === "suspended") { try { await ctx.resume(); } catch {} }
       ctxRef.current = ctx;
       sampleRateRef.current = ctx.sampleRate;
       const src = ctx.createMediaStreamSource(stream);
@@ -206,11 +206,9 @@ export function useVoiceDictation({ onFinal, onInterim, onError }: Options) {
 
       node.onaudioprocess = (e) => {
         const input = e.inputBuffer.getChannelData(0);
-        // copy since the buffer is reused
         const copy = new Float32Array(input.length);
         copy.set(input);
         segmentPcmRef.current.push(copy);
-        // simple RMS voice detection
         let sum = 0;
         for (let i = 0; i < copy.length; i++) sum += copy[i] * copy[i];
         const rms = Math.sqrt(sum / copy.length);
@@ -221,31 +219,45 @@ export function useVoiceDictation({ onFinal, onInterim, onError }: Options) {
 
       let lastRun = Date.now();
       timerRef.current = setInterval(() => {
+        if (!listeningRef.current) return;
         const now = Date.now();
-        const silent = now - lastVoiceAtRef.current > SILENCE_MS;
-        if (silent && segmentPcmRef.current.length > 0) {
+        const quiet = now - lastVoiceAtRef.current;
+        if (quiet > AUTOSTOP_MS && segmentPcmRef.current.length > 0) {
+          // auto-stop
+          void (async () => {
+            if (stopReqRef.current) return;
+            stopReqRef.current = true;
+            listeningRef.current = false;
+            setListening(false);
+            try { await transcribeCurrent(true); } catch {}
+            cleanup();
+            onAutoStop?.();
+          })();
+        } else if (quiet > SILENCE_MS && segmentPcmRef.current.length > 0) {
           lastRun = now;
           void transcribeCurrent(true);
         } else if (now - lastRun > WINDOW_MS) {
           lastRun = now;
           void transcribeCurrent(false);
         }
-      }, 300);
+      }, 250);
 
+      listeningRef.current = true;
       setListening(true);
     } catch (e) {
-      onError?.(e instanceof Error ? e.message : "Microphone access denied");
+      onError?.(e instanceof Error ? e.message : "Couldn't start voice input.");
       cleanup();
     }
-  }, [listening, transcribeCurrent, cleanup, onError]);
+  }, [transcribeCurrent, cleanup, onError, onAutoStop]);
 
   const stop = useCallback(async () => {
-    if (!listening) return;
+    if (!listeningRef.current) return;
+    stopReqRef.current = true;
+    listeningRef.current = false;
     setListening(false);
-    // final flush
     try { await transcribeCurrent(true); } catch {}
     cleanup();
-  }, [listening, transcribeCurrent, cleanup]);
+  }, [transcribeCurrent, cleanup]);
 
   return { listening, transcribing, start, stop };
 }

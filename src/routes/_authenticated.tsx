@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useNavigate, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, PieChart } from "lucide-react";
+import { Home, MessageCircle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
   component: AuthenticatedShell,
@@ -33,8 +33,8 @@ function AuthenticatedShell() {
     );
   }
 
-  const isChat = location.pathname === "/";
-  const isDash = location.pathname.startsWith("/dashboard");
+  const isHome = location.pathname === "/";
+  const isChat = location.pathname.startsWith("/chat");
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -43,11 +43,11 @@ function AuthenticatedShell() {
       </div>
       <nav className="fixed bottom-0 inset-x-0 border-t border-border bg-card/90 backdrop-blur-lg">
         <div className="mx-auto max-w-lg grid grid-cols-2">
-          <TabLink to="/" label="Assistant" active={isChat}>
-            <MessageCircle className="h-5 w-5" strokeWidth={1.75} />
+          <TabLink to="/" label="Home" active={isHome}>
+            <Home className="h-5 w-5" strokeWidth={1.75} />
           </TabLink>
-          <TabLink to="/dashboard" label="Dashboard" active={isDash}>
-            <PieChart className="h-5 w-5" strokeWidth={1.75} />
+          <TabLink to="/chat" label="Talk" active={isChat}>
+            <MessageCircle className="h-5 w-5" strokeWidth={1.75} />
           </TabLink>
         </div>
       </nav>

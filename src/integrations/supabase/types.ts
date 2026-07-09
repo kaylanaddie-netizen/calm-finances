@@ -321,6 +321,42 @@ export type Database = {
           },
         ]
       }
+      user_memory: {
+        Row: {
+          category: string
+          confidence: number
+          created_at: string
+          id: string
+          key: string
+          last_seen_at: string
+          updated_at: string
+          user_id: string
+          value: string
+        }
+        Insert: {
+          category: string
+          confidence?: number
+          created_at?: string
+          id?: string
+          key: string
+          last_seen_at?: string
+          updated_at?: string
+          user_id: string
+          value: string
+        }
+        Update: {
+          category?: string
+          confidence?: number
+          created_at?: string
+          id?: string
+          key?: string
+          last_seen_at?: string
+          updated_at?: string
+          user_id?: string
+          value?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
