@@ -469,15 +469,19 @@ function Card({
   children,
   accent,
   small,
+  bgColor,
 }: {
   children: React.ReactNode;
   accent?: "sage" | "clay";
   small?: boolean;
+  bgColor?: string;
 }) {
-  const cls =
-    accent === "sage" ? "bg-sage/40" : accent === "clay" ? "bg-clay/30" : "bg-card";
+  const cls = bgColor
+    ? ""
+    : accent === "sage" ? "bg-sage/40" : accent === "clay" ? "bg-clay/30" : "bg-card";
   return (
     <div
+      style={bgColor ? { backgroundColor: bgColor } : undefined}
       className={`rounded-3xl ${cls} border border-border ${small ? "p-4" : "p-6"}`}
     >
       {children}
