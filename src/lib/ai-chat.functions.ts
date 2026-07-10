@@ -226,6 +226,14 @@ async function runTool(
       case "add_expected_payment": {
         const { data: c } = await supabase.from("clients").select("id")
           .eq("user_id", userId).ilike("name", String(args.client_name)).maybeSingle();
+        const { data: dup } = await supabase.from("expected_payments").select("id")
+          .eq("user_id", userId)
+          .ilike("client_name", String(args.client_name))
+          .eq("expected_date", String(args.expected_date))
+          .eq("expected_amount", Number(args.expected_amount))
+          .in("status", ["pending", "overdue"])
+          .maybeSingle();
+        if (dup) return `already tracking that expected payment`;
         await supabase.from("expected_payments").insert({
           user_id: userId, client_id: c?.id ?? null,
           client_name: args.client_name,
@@ -339,7 +347,7 @@ async function buildContext(supabase: any, userId: string): Promise<string> {
     supabase.from("clients").select("name,typical_pay_delay_days,typical_amount,is_recurring").eq("user_id", userId),
     supabase.from("expected_payments").select("client_name,expected_amount,expected_date,status")
       .eq("user_id", userId).in("status", ["pending", "overdue"]).order("expected_date"),
-    supabase.from("goals").select("name,target_amount,current_amount").eq("user_id", userId).eq("is_active", true),
+    supabase.from("goals").select("name,target_amount,current_amount,sort_order").eq("user_id", userId).eq("is_active", true).order("sort_order"),
     supabase.from("bills").select("name,amount,due_date").eq("user_id", userId).eq("is_paid", false).order("due_date"),
     supabase.from("user_memory").select("category,key,value,confidence").eq("user_id", userId).order("last_seen_at", { ascending: false }).limit(80),
   ]);
@@ -373,6 +381,8 @@ CRITICAL: Never create a goal, tier, or bill from a casual message. "I had a str
 Use long_term_memory to avoid re-asking things. If the user mentions a known merchant/employer, infer silently. Ask at most ONE question, and only when a required field truly cannot be inferred.
 
 When you record something, confirm in one short line: "Saved: $6 Starbucks." No wall of text. No tool names, no jargon.
+
+GOAL PRIORITY: active_goals is already sorted by the user's chosen priority (position 1 = highest). When recommending contributions, trade-offs, or focus, prioritize the earlier goals in that list. Never reorder them yourself.
 
 If today is Monday, gently offer a Weekly Money Reset, one small step at a time.`;
 
@@ -475,7 +485,7 @@ export const loadDashboard = createServerFn({ method: "GET" })
     const [accounts, expected, goals, bills, txThisMonth, txLastMonth] = await Promise.all([
       supabase.from("accounts").select("*").eq("user_id", userId),
       supabase.from("expected_payments").select("*").eq("user_id", userId).in("status", ["pending", "overdue"]).order("expected_date"),
-      supabase.from("goals").select("*").eq("user_id", userId).eq("is_active", true).order("created_at"),
+      supabase.from("goals").select("*").eq("user_id", userId).eq("is_active", true).order("sort_order").order("created_at"),
       supabase.from("bills").select("*").eq("user_id", userId).eq("is_paid", false).order("due_date").limit(20),
       supabase.from("transactions").select("*").eq("user_id", userId).gte("occurred_on", thisMonthStart),
       supabase.from("transactions").select("*").eq("user_id", userId).gte("occurred_on", lastMonthStart).lt("occurred_on", thisMonthStart),
@@ -566,4 +576,57 @@ export const loadDashboard = createServerFn({ method: "GET" })
       lastMonthSpend,
       weekSpend,
     };
+  });
+
+const ReorderGoalsInput = z.object({ orderedIds: z.array(z.string().uuid()).min(1) });
+export const reorderGoals = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => ReorderGoalsInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: any; userId: string };
+    await Promise.all(
+      data.orderedIds.map((id, idx) =>
+        supabase.from("goals").update({ sort_order: idx + 1 }).eq("id", id).eq("user_id", userId),
+      ),
+    );
+    return { ok: true };
+  });
+
+const DeleteGoalInput = z.object({ id: z.string().uuid() });
+export const deleteGoal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => DeleteGoalInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: any; userId: string };
+    await supabase.from("goals").update({ is_active: false }).eq("id", data.id).eq("user_id", userId);
+    return { ok: true };
+  });
+
+const UpdateExpectedInput = z.object({
+  id: z.string().uuid(),
+  client_name: z.string().min(1).optional(),
+  expected_amount: z.number().optional(),
+  expected_date: z.string().optional(),
+});
+export const updateExpectedPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => UpdateExpectedInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: any; userId: string };
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (data.client_name !== undefined) patch.client_name = data.client_name;
+    if (data.expected_amount !== undefined) patch.expected_amount = data.expected_amount;
+    if (data.expected_date !== undefined) patch.expected_date = data.expected_date;
+    await supabase.from("expected_payments").update(patch).eq("id", data.id).eq("user_id", userId);
+    return { ok: true };
+  });
+
+const DeleteExpectedInput = z.object({ id: z.string().uuid() });
+export const deleteExpectedPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => DeleteExpectedInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: any; userId: string };
+    await supabase.from("expected_payments").delete().eq("id", data.id).eq("user_id", userId);
+    return { ok: true };
   });
