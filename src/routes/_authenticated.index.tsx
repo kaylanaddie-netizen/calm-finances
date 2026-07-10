@@ -70,6 +70,97 @@ function Home() {
     );
   }
 
+  const colors: Record<string, string> = data.elementColors ?? {};
+  const order: string[] = data.sectionOrder ?? [
+    "net_worth","accounts","safe_to_spend","income_bills","talk_to_calm","goals","expected_payments",
+  ];
+
+  const sections: Record<string, React.ReactNode> = {
+    net_worth: (
+      <Card key="net_worth" bgColor={colors.net_worth}>
+        <p className="text-sm text-muted-foreground">Net worth</p>
+        <p className="font-serif text-5xl mt-1 tabular-nums">{fmt(data.netWorth)}</p>
+        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <MiniStat label="Cash" value={fmt(data.cash)} />
+          <MiniStat label="Emergency" value={fmt(data.emergency)} />
+        </div>
+      </Card>
+    ),
+    accounts: (
+      <Section key="accounts" title="Your accounts">
+        {data.accounts.length === 0 ? (
+          <Empty text="Tell Calm about your accounts and balances." />
+        ) : (
+          <div className="space-y-2">
+            {data.accounts.map((a: any) => (
+              <Row
+                key={a.id}
+                left={a.name}
+                sub={a.is_emergency_fund ? "Emergency fund" : undefined}
+                right={fmt(Number(a.balance))}
+              />
+            ))}
+          </div>
+        )}
+      </Section>
+    ),
+    safe_to_spend: (
+      <Card key="safe_to_spend" accent="sage" bgColor={colors.safe_to_spend}>
+        <div className="flex items-center gap-2 text-sage-foreground/80 text-sm">
+          <Sparkles className="h-4 w-4" />
+          Safe to spend today
+        </div>
+        <p className="font-serif text-4xl mt-1 tabular-nums">{fmt(data.safeToday)}</p>
+      </Card>
+    ),
+    income_bills: (
+      <div key="income_bills" className="grid grid-cols-2 gap-3">
+        <Card small bgColor={colors.upcoming_income}>
+          <p className="text-xs text-muted-foreground">Upcoming income</p>
+          {data.nextIncome ? (
+            <>
+              <p className="font-serif text-2xl mt-1 tabular-nums">
+                {fmt(Number(data.nextIncome.expected_amount))}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {data.nextIncome.client_name} · {fmtDate(data.nextIncome.expected_date)}
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">Nothing expected yet.</p>
+          )}
+        </Card>
+        <Card small bgColor={colors.bills_this_week}>
+          <p className="text-xs text-muted-foreground">Bills this week</p>
+          <p className="font-serif text-2xl mt-1 tabular-nums">
+            {fmt(data.upcomingBills.reduce((s: number, b: any) => s + Number(b.amount), 0))}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {data.upcomingBills.length ? `${data.upcomingBills.length} due` : "None due"}
+          </p>
+        </Card>
+      </div>
+    ),
+    talk_to_calm: (
+      <Link
+        key="talk_to_calm"
+        to="/chat"
+        style={colors.talk_to_calm ? { backgroundColor: colors.talk_to_calm } : undefined}
+        className={`flex items-center justify-between rounded-3xl px-6 py-5 shadow-sm hover:opacity-95 transition-opacity ${
+          colors.talk_to_calm ? "text-foreground" : "bg-primary text-primary-foreground"
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <MessageCircle className="h-5 w-5" />
+          <span className="font-serif text-xl">Talk to Calm</span>
+        </div>
+        <ArrowUpRight className="h-5 w-5" />
+      </Link>
+    ),
+    goals: <GoalsSection key="goals" goals={data.goals as Goal[]} />,
+    expected_payments: <ExpectedSection key="expected_payments" expected={data.expected as Expected[]} />,
+  };
+
   return (
     <div className="mx-auto max-w-lg px-5 pt-8 pb-8 space-y-5">
       <header className="flex items-start justify-between">
@@ -86,83 +177,7 @@ function Home() {
         </button>
       </header>
 
-      {/* Net worth hero */}
-      <Card>
-        <p className="text-sm text-muted-foreground">Net worth</p>
-        <p className="font-serif text-5xl mt-1 tabular-nums">{fmt(data.netWorth)}</p>
-        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-          <MiniStat label="Cash" value={fmt(data.cash)} />
-          <MiniStat label="Emergency" value={fmt(data.emergency)} />
-        </div>
-      </Card>
-
-      {/* Accounts */}
-      <Section title="Your accounts">
-        {data.accounts.length === 0 ? (
-          <Empty text="Tell Calm about your accounts and balances." />
-        ) : (
-          <div className="space-y-2">
-            {data.accounts.map((a: any) => (
-              <Row
-                key={a.id}
-                left={a.name}
-                sub={a.is_emergency_fund ? "Emergency fund" : undefined}
-                right={fmt(Number(a.balance))}
-              />
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <Card accent="sage">
-        <div className="flex items-center gap-2 text-sage-foreground/80 text-sm">
-          <Sparkles className="h-4 w-4" />
-          Safe to spend today
-        </div>
-        <p className="font-serif text-4xl mt-1 tabular-nums">{fmt(data.safeToday)}</p>
-      </Card>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Card small>
-          <p className="text-xs text-muted-foreground">Upcoming income</p>
-          {data.nextIncome ? (
-            <>
-              <p className="font-serif text-2xl mt-1 tabular-nums">
-                {fmt(Number(data.nextIncome.expected_amount))}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {data.nextIncome.client_name} · {fmtDate(data.nextIncome.expected_date)}
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 text-sm text-muted-foreground">Nothing expected yet.</p>
-          )}
-        </Card>
-        <Card small>
-          <p className="text-xs text-muted-foreground">Bills this week</p>
-          <p className="font-serif text-2xl mt-1 tabular-nums">
-            {fmt(data.upcomingBills.reduce((s: number, b: any) => s + Number(b.amount), 0))}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {data.upcomingBills.length ? `${data.upcomingBills.length} due` : "None due"}
-          </p>
-        </Card>
-      </div>
-
-      <Link
-        to="/chat"
-        className="flex items-center justify-between rounded-3xl bg-primary text-primary-foreground px-6 py-5 shadow-sm hover:opacity-95 transition-opacity"
-      >
-        <div className="flex items-center gap-3">
-          <MessageCircle className="h-5 w-5" />
-          <span className="font-serif text-xl">Talk to Calm</span>
-        </div>
-        <ArrowUpRight className="h-5 w-5" />
-      </Link>
-
-      <GoalsSection goals={data.goals as Goal[]} />
-
-      <ExpectedSection expected={data.expected as Expected[]} />
+      {order.map((k) => sections[k]).filter(Boolean)}
     </div>
   );
 }
