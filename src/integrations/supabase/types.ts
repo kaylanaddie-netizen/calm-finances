@@ -321,6 +321,33 @@ export type Database = {
           },
         ]
       }
+      ui_preferences: {
+        Row: {
+          account_order: Json
+          created_at: string
+          element_colors: Json
+          section_order: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_order?: Json
+          created_at?: string
+          element_colors?: Json
+          section_order?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_order?: Json
+          created_at?: string
+          element_colors?: Json
+          section_order?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_memory: {
         Row: {
           category: string

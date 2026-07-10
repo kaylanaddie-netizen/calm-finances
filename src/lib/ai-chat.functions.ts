@@ -180,6 +180,52 @@ const TOOLS: ToolFn[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "reorder_home_sections",
+      description:
+        "Reorder the visible sections on the user's home dashboard. Provide the FULL ordered list of section keys as the user wants them from top to bottom. Valid keys: 'net_worth', 'accounts', 'safe_to_spend', 'income_bills', 'talk_to_calm', 'goals', 'expected_payments'. Include every key exactly once.",
+      parameters: {
+        type: "object",
+        properties: {
+          order: { type: "array", items: { type: "string" } },
+        },
+        required: ["order"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reorder_accounts",
+      description:
+        "Reorder the accounts list on the home dashboard. Provide the FULL ordered list of account names (case-insensitive) as they should appear top to bottom. Missing accounts fall to the bottom in their existing order.",
+      parameters: {
+        type: "object",
+        properties: {
+          names: { type: "array", items: { type: "string" } },
+        },
+        required: ["names"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_element_color",
+      description:
+        "Change the background color of a home dashboard element. Valid element keys: 'talk_to_calm', 'net_worth', 'safe_to_spend', 'upcoming_income', 'bills_this_week'. Color must be a CSS color string like '#f9a8d4', 'pink', 'hsl(320 80% 80%)'. Pass color='' to reset to default.",
+      parameters: {
+        type: "object",
+        properties: {
+          element: { type: "string" },
+          color: { type: "string" },
+        },
+        required: ["element", "color"],
+      },
+    },
+  },
 ];
 
 async function runTool(
@@ -334,6 +380,37 @@ async function runTool(
           .eq("key", String(args.key).toLowerCase());
         return `ok: forgot ${args.category}/${args.key}`;
       }
+      case "reorder_home_sections": {
+        const valid = ["net_worth","accounts","safe_to_spend","income_bills","talk_to_calm","goals","expected_payments"];
+        const raw = Array.isArray(args.order) ? (args.order as unknown[]).map(String) : [];
+        const clean: string[] = [];
+        for (const k of raw) if (valid.includes(k) && !clean.includes(k)) clean.push(k);
+        for (const k of valid) if (!clean.includes(k)) clean.push(k);
+        await supabase.from("ui_preferences").upsert({
+          user_id: userId, section_order: clean, updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        return `ok: section order = ${clean.join(", ")}`;
+      }
+      case "reorder_accounts": {
+        const names = Array.isArray(args.names) ? (args.names as unknown[]).map((s) => String(s).toLowerCase()) : [];
+        await supabase.from("ui_preferences").upsert({
+          user_id: userId, account_order: names, updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        return `ok: accounts ordered as ${names.join(", ")}`;
+      }
+      case "set_element_color": {
+        const validEls = ["talk_to_calm","net_worth","safe_to_spend","upcoming_income","bills_this_week"];
+        const el = String(args.element);
+        if (!validEls.includes(el)) return `error: unknown element ${el}`;
+        const { data: existing } = await supabase.from("ui_preferences").select("element_colors").eq("user_id", userId).maybeSingle();
+        const colors: Record<string, string> = { ...(existing?.element_colors ?? {}) };
+        const color = String(args.color ?? "").trim();
+        if (color === "") delete colors[el]; else colors[el] = color;
+        await supabase.from("ui_preferences").upsert({
+          user_id: userId, element_colors: colors, updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        return `ok: ${el} color ${color === "" ? "reset" : "= " + color}`;
+      }
     }
     return `unknown tool ${name}`;
   } catch (e) {
@@ -342,7 +419,7 @@ async function runTool(
 }
 
 async function buildContext(supabase: any, userId: string): Promise<string> {
-  const [accounts, clients, expected, goals, bills, memory] = await Promise.all([
+  const [accounts, clients, expected, goals, bills, memory, prefs] = await Promise.all([
     supabase.from("accounts").select("name,balance,is_emergency_fund").eq("user_id", userId),
     supabase.from("clients").select("name,typical_pay_delay_days,typical_amount,is_recurring").eq("user_id", userId),
     supabase.from("expected_payments").select("client_name,expected_amount,expected_date,status")
@@ -350,6 +427,7 @@ async function buildContext(supabase: any, userId: string): Promise<string> {
     supabase.from("goals").select("name,target_amount,current_amount,sort_order").eq("user_id", userId).eq("is_active", true).order("sort_order"),
     supabase.from("bills").select("name,amount,due_date").eq("user_id", userId).eq("is_paid", false).order("due_date"),
     supabase.from("user_memory").select("category,key,value,confidence").eq("user_id", userId).order("last_seen_at", { ascending: false }).limit(80),
+    supabase.from("ui_preferences").select("section_order,account_order,element_colors").eq("user_id", userId).maybeSingle(),
   ]);
   const today = new Date().toISOString().slice(0, 10);
   const dayOfWeek = new Date().toLocaleDateString("en-US", { weekday: "long" });
@@ -361,6 +439,7 @@ async function buildContext(supabase: any, userId: string): Promise<string> {
     active_goals: goals.data ?? [],
     upcoming_bills: bills.data ?? [],
     long_term_memory: memory.data ?? [],
+    ui_preferences: prefs?.data ?? { section_order: [], account_order: [], element_colors: {} },
   });
 }
 
@@ -383,6 +462,12 @@ Use long_term_memory to avoid re-asking things. If the user mentions a known mer
 When you record something, confirm in one short line: "Saved: $6 Starbucks." No wall of text. No tool names, no jargon.
 
 GOAL PRIORITY: active_goals is already sorted by the user's chosen priority (position 1 = highest). When recommending contributions, trade-offs, or focus, prioritize the earlier goals in that list. Never reorder them yourself.
+
+HOME DASHBOARD LAYOUT: You can customize the home screen when the user asks.
+- Reorder sections: call reorder_home_sections with the FULL ordered list of every section key. Keys: net_worth, accounts, safe_to_spend, income_bills, talk_to_calm, goals, expected_payments. If the user says "move net worth to the bottom", start from the current section_order in context and produce the full new list.
+- Reorder accounts: call reorder_accounts with the FULL ordered list of account names (as they appear in accounts). Match names case-insensitively; if the user references a nickname or partial name (e.g. "lip blushing"), match the closest account name.
+- Recolor an element: call set_element_color with element ∈ {talk_to_calm, net_worth, safe_to_spend, upcoming_income, bills_this_week} and a CSS color (hex, name, or hsl). Use color="" to reset. If the user names a color casually ("pink", "sage"), pick a soft, calm shade — never neon.
+Never guess these tools from casual mentions; only call them when the user clearly asks to move, reorder, or recolor something on the home screen. Confirm in one short line: "Moved net worth to the bottom."
 
 If today is Monday, gently offer a Weekly Money Reset, one small step at a time.`;
 
@@ -482,16 +567,28 @@ export const loadDashboard = createServerFn({ method: "GET" })
     await supabase.from("expected_payments").update({ status: "overdue" })
       .eq("user_id", userId).eq("status", "pending").lt("expected_date", todayStr);
 
-    const [accounts, expected, goals, bills, txThisMonth, txLastMonth] = await Promise.all([
+    const [accounts, expected, goals, bills, txThisMonth, txLastMonth, prefsRes] = await Promise.all([
       supabase.from("accounts").select("*").eq("user_id", userId),
       supabase.from("expected_payments").select("*").eq("user_id", userId).in("status", ["pending", "overdue"]).order("expected_date"),
       supabase.from("goals").select("*").eq("user_id", userId).eq("is_active", true).order("sort_order").order("created_at"),
       supabase.from("bills").select("*").eq("user_id", userId).eq("is_paid", false).order("due_date").limit(20),
       supabase.from("transactions").select("*").eq("user_id", userId).gte("occurred_on", thisMonthStart),
       supabase.from("transactions").select("*").eq("user_id", userId).gte("occurred_on", lastMonthStart).lt("occurred_on", thisMonthStart),
+      supabase.from("ui_preferences").select("section_order,account_order,element_colors").eq("user_id", userId).maybeSingle(),
     ]);
 
-    const acc = (accounts.data ?? []) as Array<{ balance: number; is_emergency_fund: boolean }>;
+    const prefs = (prefsRes?.data ?? null) as { section_order: string[]; account_order: string[]; element_colors: Record<string, string> } | null;
+    const rawAccounts = (accounts.data ?? []) as Array<{ id: string; name: string; balance: number; is_emergency_fund: boolean }>;
+    const accOrder = (prefs?.account_order ?? []).map((s) => String(s).toLowerCase());
+    const orderedAccounts = [...rawAccounts].sort((a, b) => {
+      const ai = accOrder.indexOf(a.name.toLowerCase());
+      const bi = accOrder.indexOf(b.name.toLowerCase());
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+    const acc = rawAccounts as Array<{ balance: number; is_emergency_fund: boolean }>;
     const netWorth = acc.reduce((s, a) => s + Number(a.balance), 0);
     const emergency = acc.filter((a) => a.is_emergency_fund).reduce((s, a) => s + Number(a.balance), 0);
     const cash = acc.filter((a) => !a.is_emergency_fund).reduce((s, a) => s + Number(a.balance), 0);
@@ -556,6 +653,12 @@ export const loadDashboard = createServerFn({ method: "GET" })
       return { ...g, pct, eta };
     });
 
+    const defaultSections = ["net_worth","accounts","safe_to_spend","income_bills","talk_to_calm","goals","expected_payments"];
+    const savedSections = Array.isArray(prefs?.section_order) ? (prefs!.section_order as string[]) : [];
+    const sectionOrder: string[] = [];
+    for (const k of savedSections) if (defaultSections.includes(k) && !sectionOrder.includes(k)) sectionOrder.push(k);
+    for (const k of defaultSections) if (!sectionOrder.includes(k)) sectionOrder.push(k);
+
     return {
       today: todayStr,
       cash,
@@ -564,7 +667,7 @@ export const loadDashboard = createServerFn({ method: "GET" })
       safeToday,
       cashIn7,
       cashIn30,
-      accounts: accounts.data ?? [],
+      accounts: orderedAccounts,
       expected: expectedRows,
       nextIncome,
       bills: billRows,
@@ -575,6 +678,8 @@ export const loadDashboard = createServerFn({ method: "GET" })
       monthSpend,
       lastMonthSpend,
       weekSpend,
+      sectionOrder,
+      elementColors: (prefs?.element_colors ?? {}) as Record<string, string>,
     };
   });
 
