@@ -419,7 +419,7 @@ async function runTool(
 }
 
 async function buildContext(supabase: any, userId: string): Promise<string> {
-  const [accounts, clients, expected, goals, bills, memory] = await Promise.all([
+  const [accounts, clients, expected, goals, bills, memory, prefs] = await Promise.all([
     supabase.from("accounts").select("name,balance,is_emergency_fund").eq("user_id", userId),
     supabase.from("clients").select("name,typical_pay_delay_days,typical_amount,is_recurring").eq("user_id", userId),
     supabase.from("expected_payments").select("client_name,expected_amount,expected_date,status")
@@ -427,6 +427,7 @@ async function buildContext(supabase: any, userId: string): Promise<string> {
     supabase.from("goals").select("name,target_amount,current_amount,sort_order").eq("user_id", userId).eq("is_active", true).order("sort_order"),
     supabase.from("bills").select("name,amount,due_date").eq("user_id", userId).eq("is_paid", false).order("due_date"),
     supabase.from("user_memory").select("category,key,value,confidence").eq("user_id", userId).order("last_seen_at", { ascending: false }).limit(80),
+    supabase.from("ui_preferences").select("section_order,account_order,element_colors").eq("user_id", userId).maybeSingle(),
   ]);
   const today = new Date().toISOString().slice(0, 10);
   const dayOfWeek = new Date().toLocaleDateString("en-US", { weekday: "long" });
@@ -438,6 +439,7 @@ async function buildContext(supabase: any, userId: string): Promise<string> {
     active_goals: goals.data ?? [],
     upcoming_bills: bills.data ?? [],
     long_term_memory: memory.data ?? [],
+    ui_preferences: prefs?.data ?? { section_order: [], account_order: [], element_colors: {} },
   });
 }
 
