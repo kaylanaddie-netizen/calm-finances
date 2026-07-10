@@ -226,6 +226,14 @@ async function runTool(
       case "add_expected_payment": {
         const { data: c } = await supabase.from("clients").select("id")
           .eq("user_id", userId).ilike("name", String(args.client_name)).maybeSingle();
+        const { data: dup } = await supabase.from("expected_payments").select("id")
+          .eq("user_id", userId)
+          .ilike("client_name", String(args.client_name))
+          .eq("expected_date", String(args.expected_date))
+          .eq("expected_amount", Number(args.expected_amount))
+          .in("status", ["pending", "overdue"])
+          .maybeSingle();
+        if (dup) return `already tracking that expected payment`;
         await supabase.from("expected_payments").insert({
           user_id: userId, client_id: c?.id ?? null,
           client_name: args.client_name,
