@@ -179,6 +179,7 @@ const TOOLS: ToolFn[] = [
         required: ["category", "key"],
       },
     },
+  },
   {
     type: "function",
     function: {
