@@ -559,13 +559,14 @@ export const loadDashboard = createServerFn({ method: "GET" })
     await supabase.from("expected_payments").update({ status: "overdue" })
       .eq("user_id", userId).eq("status", "pending").lt("expected_date", todayStr);
 
-    const [accounts, expected, goals, bills, txThisMonth, txLastMonth] = await Promise.all([
+    const [accounts, expected, goals, bills, txThisMonth, txLastMonth, prefsRes] = await Promise.all([
       supabase.from("accounts").select("*").eq("user_id", userId),
       supabase.from("expected_payments").select("*").eq("user_id", userId).in("status", ["pending", "overdue"]).order("expected_date"),
       supabase.from("goals").select("*").eq("user_id", userId).eq("is_active", true).order("sort_order").order("created_at"),
       supabase.from("bills").select("*").eq("user_id", userId).eq("is_paid", false).order("due_date").limit(20),
       supabase.from("transactions").select("*").eq("user_id", userId).gte("occurred_on", thisMonthStart),
       supabase.from("transactions").select("*").eq("user_id", userId).gte("occurred_on", lastMonthStart).lt("occurred_on", thisMonthStart),
+      supabase.from("ui_preferences").select("section_order,account_order,element_colors").eq("user_id", userId).maybeSingle(),
     ]);
 
     const acc = (accounts.data ?? []) as Array<{ balance: number; is_emergency_fund: boolean }>;
