@@ -569,7 +569,18 @@ export const loadDashboard = createServerFn({ method: "GET" })
       supabase.from("ui_preferences").select("section_order,account_order,element_colors").eq("user_id", userId).maybeSingle(),
     ]);
 
-    const acc = (accounts.data ?? []) as Array<{ balance: number; is_emergency_fund: boolean }>;
+    const prefs = (prefsRes?.data ?? null) as { section_order: string[]; account_order: string[]; element_colors: Record<string, string> } | null;
+    const rawAccounts = (accounts.data ?? []) as Array<{ id: string; name: string; balance: number; is_emergency_fund: boolean }>;
+    const accOrder = (prefs?.account_order ?? []).map((s) => String(s).toLowerCase());
+    const orderedAccounts = [...rawAccounts].sort((a, b) => {
+      const ai = accOrder.indexOf(a.name.toLowerCase());
+      const bi = accOrder.indexOf(b.name.toLowerCase());
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+    const acc = rawAccounts as Array<{ balance: number; is_emergency_fund: boolean }>;
     const netWorth = acc.reduce((s, a) => s + Number(a.balance), 0);
     const emergency = acc.filter((a) => a.is_emergency_fund).reduce((s, a) => s + Number(a.balance), 0);
     const cash = acc.filter((a) => !a.is_emergency_fund).reduce((s, a) => s + Number(a.balance), 0);
