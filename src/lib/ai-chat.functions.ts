@@ -461,6 +461,12 @@ When you record something, confirm in one short line: "Saved: $6 Starbucks." No 
 
 GOAL PRIORITY: active_goals is already sorted by the user's chosen priority (position 1 = highest). When recommending contributions, trade-offs, or focus, prioritize the earlier goals in that list. Never reorder them yourself.
 
+HOME DASHBOARD LAYOUT: You can customize the home screen when the user asks.
+- Reorder sections: call reorder_home_sections with the FULL ordered list of every section key. Keys: net_worth, accounts, safe_to_spend, income_bills, talk_to_calm, goals, expected_payments. If the user says "move net worth to the bottom", start from the current section_order in context and produce the full new list.
+- Reorder accounts: call reorder_accounts with the FULL ordered list of account names (as they appear in accounts). Match names case-insensitively; if the user references a nickname or partial name (e.g. "lip blushing"), match the closest account name.
+- Recolor an element: call set_element_color with element ∈ {talk_to_calm, net_worth, safe_to_spend, upcoming_income, bills_this_week} and a CSS color (hex, name, or hsl). Use color="" to reset. If the user names a color casually ("pink", "sage"), pick a soft, calm shade — never neon.
+Never guess these tools from casual mentions; only call them when the user clearly asks to move, reorder, or recolor something on the home screen. Confirm in one short line: "Moved net worth to the bottom."
+
 If today is Monday, gently offer a Weekly Money Reset, one small step at a time.`;
 
 export const sendChatMessage = createServerFn({ method: "POST" })
