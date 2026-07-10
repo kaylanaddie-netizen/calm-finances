@@ -382,6 +382,8 @@ Use long_term_memory to avoid re-asking things. If the user mentions a known mer
 
 When you record something, confirm in one short line: "Saved: $6 Starbucks." No wall of text. No tool names, no jargon.
 
+GOAL PRIORITY: active_goals is already sorted by the user's chosen priority (position 1 = highest). When recommending contributions, trade-offs, or focus, prioritize the earlier goals in that list. Never reorder them yourself.
+
 If today is Monday, gently offer a Weekly Money Reset, one small step at a time.`;
 
 export const sendChatMessage = createServerFn({ method: "POST" })
