@@ -673,14 +673,6 @@ export const loadDashboard = createServerFn({ method: "GET" })
       sectionOrder,
       elementColors: (prefs?.element_colors ?? {}) as Record<string, string>,
     };
-      upcomingBills,
-      difficultBills,
-      goals: goalsWithEta,
-      monthlyIncomeBySource,
-      monthSpend,
-      lastMonthSpend,
-      weekSpend,
-    };
   });
 
 const ReorderGoalsInput = z.object({ orderedIds: z.array(z.string().uuid()).min(1) });
