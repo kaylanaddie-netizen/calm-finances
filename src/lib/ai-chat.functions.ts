@@ -347,7 +347,7 @@ async function buildContext(supabase: any, userId: string): Promise<string> {
     supabase.from("clients").select("name,typical_pay_delay_days,typical_amount,is_recurring").eq("user_id", userId),
     supabase.from("expected_payments").select("client_name,expected_amount,expected_date,status")
       .eq("user_id", userId).in("status", ["pending", "overdue"]).order("expected_date"),
-    supabase.from("goals").select("name,target_amount,current_amount").eq("user_id", userId).eq("is_active", true),
+    supabase.from("goals").select("name,target_amount,current_amount,sort_order").eq("user_id", userId).eq("is_active", true).order("sort_order"),
     supabase.from("bills").select("name,amount,due_date").eq("user_id", userId).eq("is_paid", false).order("due_date"),
     supabase.from("user_memory").select("category,key,value,confidence").eq("user_id", userId).order("last_seen_at", { ascending: false }).limit(80),
   ]);
