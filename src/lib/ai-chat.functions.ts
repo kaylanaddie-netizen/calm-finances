@@ -380,6 +380,37 @@ async function runTool(
           .eq("key", String(args.key).toLowerCase());
         return `ok: forgot ${args.category}/${args.key}`;
       }
+      case "reorder_home_sections": {
+        const valid = ["net_worth","accounts","safe_to_spend","income_bills","talk_to_calm","goals","expected_payments"];
+        const raw = Array.isArray(args.order) ? (args.order as unknown[]).map(String) : [];
+        const clean: string[] = [];
+        for (const k of raw) if (valid.includes(k) && !clean.includes(k)) clean.push(k);
+        for (const k of valid) if (!clean.includes(k)) clean.push(k);
+        await supabase.from("ui_preferences").upsert({
+          user_id: userId, section_order: clean, updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        return `ok: section order = ${clean.join(", ")}`;
+      }
+      case "reorder_accounts": {
+        const names = Array.isArray(args.names) ? (args.names as unknown[]).map((s) => String(s).toLowerCase()) : [];
+        await supabase.from("ui_preferences").upsert({
+          user_id: userId, account_order: names, updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        return `ok: accounts ordered as ${names.join(", ")}`;
+      }
+      case "set_element_color": {
+        const validEls = ["talk_to_calm","net_worth","safe_to_spend","upcoming_income","bills_this_week"];
+        const el = String(args.element);
+        if (!validEls.includes(el)) return `error: unknown element ${el}`;
+        const { data: existing } = await supabase.from("ui_preferences").select("element_colors").eq("user_id", userId).maybeSingle();
+        const colors: Record<string, string> = { ...(existing?.element_colors ?? {}) };
+        const color = String(args.color ?? "").trim();
+        if (color === "") delete colors[el]; else colors[el] = color;
+        await supabase.from("ui_preferences").upsert({
+          user_id: userId, element_colors: colors, updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        return `ok: ${el} color ${color === "" ? "reset" : "= " + color}`;
+      }
     }
     return `unknown tool ${name}`;
   } catch (e) {
