@@ -179,6 +179,51 @@ const TOOLS: ToolFn[] = [
         required: ["category", "key"],
       },
     },
+  {
+    type: "function",
+    function: {
+      name: "reorder_home_sections",
+      description:
+        "Reorder the visible sections on the user's home dashboard. Provide the FULL ordered list of section keys as the user wants them from top to bottom. Valid keys: 'net_worth', 'accounts', 'safe_to_spend', 'income_bills', 'talk_to_calm', 'goals', 'expected_payments'. Include every key exactly once.",
+      parameters: {
+        type: "object",
+        properties: {
+          order: { type: "array", items: { type: "string" } },
+        },
+        required: ["order"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reorder_accounts",
+      description:
+        "Reorder the accounts list on the home dashboard. Provide the FULL ordered list of account names (case-insensitive) as they should appear top to bottom. Missing accounts fall to the bottom in their existing order.",
+      parameters: {
+        type: "object",
+        properties: {
+          names: { type: "array", items: { type: "string" } },
+        },
+        required: ["names"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_element_color",
+      description:
+        "Change the background color of a home dashboard element. Valid element keys: 'talk_to_calm', 'net_worth', 'safe_to_spend', 'upcoming_income', 'bills_this_week'. Color must be a CSS color string like '#f9a8d4', 'pink', 'hsl(320 80% 80%)'. Pass color='' to reset to default.",
+      parameters: {
+        type: "object",
+        properties: {
+          element: { type: "string" },
+          color: { type: "string" },
+        },
+        required: ["element", "color"],
+      },
+    },
   },
 ];
 
