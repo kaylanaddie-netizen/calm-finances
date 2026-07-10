@@ -577,3 +577,56 @@ export const loadDashboard = createServerFn({ method: "GET" })
       weekSpend,
     };
   });
+
+const ReorderGoalsInput = z.object({ orderedIds: z.array(z.string().uuid()).min(1) });
+export const reorderGoals = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => ReorderGoalsInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: any; userId: string };
+    await Promise.all(
+      data.orderedIds.map((id, idx) =>
+        supabase.from("goals").update({ sort_order: idx + 1 }).eq("id", id).eq("user_id", userId),
+      ),
+    );
+    return { ok: true };
+  });
+
+const DeleteGoalInput = z.object({ id: z.string().uuid() });
+export const deleteGoal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => DeleteGoalInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: any; userId: string };
+    await supabase.from("goals").update({ is_active: false }).eq("id", data.id).eq("user_id", userId);
+    return { ok: true };
+  });
+
+const UpdateExpectedInput = z.object({
+  id: z.string().uuid(),
+  client_name: z.string().min(1).optional(),
+  expected_amount: z.number().optional(),
+  expected_date: z.string().optional(),
+});
+export const updateExpectedPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => UpdateExpectedInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: any; userId: string };
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (data.client_name !== undefined) patch.client_name = data.client_name;
+    if (data.expected_amount !== undefined) patch.expected_amount = data.expected_amount;
+    if (data.expected_date !== undefined) patch.expected_date = data.expected_date;
+    await supabase.from("expected_payments").update(patch).eq("id", data.id).eq("user_id", userId);
+    return { ok: true };
+  });
+
+const DeleteExpectedInput = z.object({ id: z.string().uuid() });
+export const deleteExpectedPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => DeleteExpectedInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as unknown as { supabase: any; userId: string };
+    await supabase.from("expected_payments").delete().eq("id", data.id).eq("user_id", userId);
+    return { ok: true };
+  });
