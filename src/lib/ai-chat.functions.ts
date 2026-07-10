@@ -645,6 +645,12 @@ export const loadDashboard = createServerFn({ method: "GET" })
       return { ...g, pct, eta };
     });
 
+    const defaultSections = ["net_worth","accounts","safe_to_spend","income_bills","talk_to_calm","goals","expected_payments"];
+    const savedSections = Array.isArray(prefs?.section_order) ? (prefs!.section_order as string[]) : [];
+    const sectionOrder: string[] = [];
+    for (const k of savedSections) if (defaultSections.includes(k) && !sectionOrder.includes(k)) sectionOrder.push(k);
+    for (const k of defaultSections) if (!sectionOrder.includes(k)) sectionOrder.push(k);
+
     return {
       today: todayStr,
       cash,
@@ -653,10 +659,20 @@ export const loadDashboard = createServerFn({ method: "GET" })
       safeToday,
       cashIn7,
       cashIn30,
-      accounts: accounts.data ?? [],
+      accounts: orderedAccounts,
       expected: expectedRows,
       nextIncome,
       bills: billRows,
+      upcomingBills,
+      difficultBills,
+      goals: goalsWithEta,
+      monthlyIncomeBySource,
+      monthSpend,
+      lastMonthSpend,
+      weekSpend,
+      sectionOrder,
+      elementColors: (prefs?.element_colors ?? {}) as Record<string, string>,
+    };
       upcomingBills,
       difficultBills,
       goals: goalsWithEta,
